@@ -4,13 +4,19 @@
   import { onMount, onDestroy } from "svelte";
 
   let {
-    spaceSize = 20,
-    fieldSize = 18,
-    gridSize = 1,
+    spaceWidth = 20,
+    spaceLength = 20,
+    fieldWidth = 18,
+    fieldLength = 18,
+    gridWidth = 1,
+    gridLength = 1,
   }: {
-    spaceSize?: number;
-    fieldSize?: number;
-    gridSize?: number;
+    spaceWidth?: number;
+    spaceLength?: number;
+    fieldWidth?: number;
+    fieldLength?: number;
+    gridWidth?: number;
+    gridLength?: number;
   } = $props();
 
   let container: HTMLDivElement;
@@ -23,7 +29,7 @@
   let spaceEdges: THREE.LineSegments;
   let spaceWalls: THREE.Mesh;
   let fieldMesh: THREE.Mesh;
-  let gridHelper: THREE.GridHelper;
+  let gridLines: THREE.LineSegments;
 
   function initScene() {
     scene = new THREE.Scene();
@@ -35,7 +41,8 @@
       0.1,
       1000,
     );
-    camera.position.set(spaceSize * 1.5, spaceSize * 1.2, spaceSize * 1.5);
+    const camDist = Math.max(spaceWidth, spaceLength);
+    camera.position.set(camDist * 1.5, camDist * 1.2, camDist * 1.5);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
@@ -72,22 +79,27 @@
       scene.remove(fieldMesh);
       fieldMesh.geometry.dispose();
     }
-    if (gridHelper) {
-      scene.remove(gridHelper);
+    if (gridLines) {
+      scene.remove(gridLines);
+      gridLines.geometry.dispose();
     }
 
-    const safeSpace = Math.max(1, spaceSize);
-    const safeField = Math.max(1, Math.min(fieldSize, safeSpace));
-    const safeGrid = Math.max(0.1, gridSize);
+    const sw = Math.max(1, spaceWidth);
+    const sl = Math.max(1, spaceLength);
+    const sh = Math.max(sw, sl);
+    const fw = Math.max(1, Math.min(fieldWidth, sw));
+    const fl = Math.max(1, Math.min(fieldLength, sl));
+    const gw = Math.max(0.1, gridWidth);
+    const gl = Math.max(0.1, gridLength);
 
-    // Space — cube with walls
-    const boxGeo = new THREE.BoxGeometry(safeSpace, safeSpace, safeSpace);
+    // Space — box with walls
+    const boxGeo = new THREE.BoxGeometry(sw, sh, sl);
     const edgesGeo = new THREE.EdgesGeometry(boxGeo);
     spaceEdges = new THREE.LineSegments(
       edgesGeo,
       new THREE.LineBasicMaterial({ color: 0x6a6a9a }),
     );
-    spaceEdges.position.y = safeSpace / 2;
+    spaceEdges.position.y = sh / 2;
     scene.add(spaceEdges);
 
     spaceWalls = new THREE.Mesh(
@@ -99,11 +111,11 @@
         side: THREE.BackSide,
       }),
     );
-    spaceWalls.position.y = safeSpace / 2;
+    spaceWalls.position.y = sh / 2;
     scene.add(spaceWalls);
 
     // Field — plane on the floor
-    const fieldGeo = new THREE.PlaneGeometry(safeField, safeField);
+    const fieldGeo = new THREE.PlaneGeometry(fw, fl);
     fieldMesh = new THREE.Mesh(
       fieldGeo,
       new THREE.MeshStandardMaterial({
@@ -115,11 +127,28 @@
     fieldMesh.position.y = 0.01;
     scene.add(fieldMesh);
 
-    // Grid on the field
-    const divisions = Math.max(1, Math.floor(safeField / safeGrid));
-    gridHelper = new THREE.GridHelper(safeField, divisions, 0x888888, 0x555555);
-    gridHelper.position.y = 0.02;
-    scene.add(gridHelper);
+    // Custom grid on the field (rectangular cells)
+    const halfFw = fw / 2;
+    const halfFl = fl / 2;
+    const colsX = Math.max(1, Math.round(fw / gw));
+    const colsZ = Math.max(1, Math.round(fl / gl));
+    const pts: number[] = [];
+    for (let i = 0; i <= colsX; i++) {
+      const x = -halfFw + (i * fw) / colsX;
+      pts.push(x, 0, -halfFl, x, 0, halfFl);
+    }
+    for (let j = 0; j <= colsZ; j++) {
+      const z = -halfFl + (j * fl) / colsZ;
+      pts.push(-halfFw, 0, z, halfFw, 0, z);
+    }
+    const gridGeo = new THREE.BufferGeometry();
+    gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    gridLines = new THREE.LineSegments(
+      gridGeo,
+      new THREE.LineBasicMaterial({ color: 0x888888 }),
+    );
+    gridLines.position.y = 0.02;
+    scene.add(gridLines);
   }
 
   function animate() {
