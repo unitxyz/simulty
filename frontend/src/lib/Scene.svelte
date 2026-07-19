@@ -164,7 +164,7 @@
   // Asset meshes
   let assetGroup: THREE.Group;
   let assetMeshes = new Map<string, THREE.Mesh>();
-  let selectionRing: THREE.Mesh;
+  let selectionRing: THREE.Object3D;
 
   // Gizmo (axis arrows)
   let gizmoGroup: THREE.Group;
@@ -341,27 +341,27 @@
       assetMeshes.set(a.id, mesh);
     }
 
-    // Selection ring
+    // Selection square outline
     if (selectionRing) {
       assetGroup.remove(selectionRing);
-      selectionRing.geometry.dispose();
+      (selectionRing as any).geometry?.dispose();
       selectionRing = undefined as any;
     }
     if (selectedId) {
       const a = assets.find((a) => a.id === selectedId);
       if (a) {
-        const ringR = Math.max(0.01, Math.max(a.width, a.depth) / 2 + 0.05);
-        const ringGeo = new THREE.RingGeometry(ringR, ringR + 0.03, 32);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0xff8800,
-          side: THREE.DoubleSide,
-          transparent: true,
-          opacity: 0.8,
-        });
-        selectionRing = new THREE.Mesh(ringGeo, ringMat);
-        selectionRing.rotation.x = -Math.PI / 2;
-        selectionRing.position.set(a.x, 0.03, a.z);
+        const sw = Math.max(0.01, a.width + 0.06);
+        const sh = Math.max(0.01, a.height + 0.06);
+        const sd = Math.max(0.01, a.depth + 0.06);
+        const boxGeo = new THREE.BoxGeometry(sw, sh, sd);
+        const edgesGeo = new THREE.EdgesGeometry(boxGeo);
+        selectionRing = new THREE.LineSegments(
+          edgesGeo,
+          new THREE.LineBasicMaterial({ color: 0xff8800, linewidth: 2 }),
+        );
+        selectionRing.position.set(a.x, a.y, a.z);
         assetGroup.add(selectionRing);
+        boxGeo.dispose();
       }
     }
 
@@ -478,24 +478,28 @@
     // Check gizmo first
     const axis = pickGizmo();
     if (axis && selectedId) {
+      e.stopPropagation();
+      e.preventDefault();
       gizmoAxis = axis;
       gizmoDragId = selectedId;
       isDragging = false;
       const a = assets.find((a) => a.id === selectedId);
       if (a) {
         gizmoStartPos.set(a.x, a.y, a.z);
-        // Set drag plane perpendicular to the axis, facing camera
+        // Build a plane that contains the axis and faces the camera
         const axisVec = new THREE.Vector3(
           axis === "x" ? 1 : 0,
           axis === "y" ? 1 : 0,
           axis === "z" ? 1 : 0,
         );
-        // Use a plane that contains the axis and is most facing the camera
         const camDir = new THREE.Vector3();
         camera.getWorldDirection(camDir);
-        // Pick plane normal as the axis direction projected onto camera-facing
-        // Simplest: use a plane whose normal is the axis itself
-        dragPlane.setFromNormalAndCoplanarPoint(axisVec, gizmoStartPos);
+        // Plane normal = cross(axis, cross(camDir, axis)) — faces camera, contains axis
+        const temp = new THREE.Vector3().crossVectors(camDir, axisVec);
+        const planeNormal = new THREE.Vector3()
+          .crossVectors(axisVec, temp)
+          .normalize();
+        dragPlane.setFromNormalAndCoplanarPoint(planeNormal, gizmoStartPos);
         raycaster.setFromCamera(pointer, camera);
         const intersect = new THREE.Vector3();
         raycaster.ray.intersectPlane(dragPlane, intersect);
@@ -508,6 +512,8 @@
     // Check asset
     const hit = pickAsset();
     if (hit) {
+      e.stopPropagation();
+      e.preventDefault();
       const id = hit.userData.assetId as string;
       onSelect(id);
       dragId = id;
@@ -632,6 +638,10 @@
 
   onMount(() => {
     initScene();
+    // Capture mousedown before OrbitControls gets it
+    renderer.domElement.addEventListener("mousedown", onSceneMouseDown, {
+      capture: true,
+    });
     window.addEventListener("resize", onResize);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -650,6 +660,9 @@
       window.removeEventListener("mouseup", onSceneMouseUp);
     }
     if (renderer) {
+      renderer.domElement.removeEventListener("mousedown", onSceneMouseDown, {
+        capture: true,
+      } as any);
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {
         container.removeChild(renderer.domElement);
@@ -674,8 +687,4 @@
   });
 </script>
 
-<div
-  bind:this={container}
-  class="w-full h-full"
-  onmousedown={onSceneMouseDown}
-></div>
+<div bind:this={container} class="w-full h-full"></div>
