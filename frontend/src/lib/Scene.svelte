@@ -24,6 +24,8 @@
     gridLength = 1,
     gridOpacity = 0.5,
     gridOffsetY = 0,
+    grid3D = false,
+    gridVisible = true,
     cameraFree = false,
     assets = [] as AssetData[],
     selectedId = null as string | null,
@@ -38,6 +40,8 @@
     gridLength?: number;
     gridOpacity?: number;
     gridOffsetY?: number;
+    grid3D?: boolean;
+    gridVisible?: boolean;
     cameraFree?: boolean;
     assets?: AssetData[];
     selectedId?: string | null;
@@ -283,36 +287,48 @@
     fieldMesh.position.y = 0.01;
     scene.add(fieldMesh);
 
-    // 3D cubic grid (honeycomb-like cells rising from floor)
+    // Grid: flat or 3D cubic
     const halfFw = fw / 2;
     const halfFl = fl / 2;
     const colsX = Math.max(1, Math.round(fw / gw));
     const colsZ = Math.max(1, Math.round(fl / gl));
-    const gridH = Math.max(0, gridOffsetY);
-    const layersY = Math.max(1, Math.round(gridH / Math.max(gw, gl)));
     const pts: number[] = [];
 
-    // Horizontal lines at each Y layer (floor + top + intermediate)
-    for (let ly = 0; ly <= layersY; ly++) {
-      const y = (ly * gridH) / layersY;
-      // Lines along X
+    if (grid3D) {
+      // 3D cubic grid (honeycomb-like cells rising from floor)
+      const gridH = Math.max(0, gridOffsetY);
+      const layersY = Math.max(1, Math.round(gridH / Math.max(gw, gl)));
+
+      // Horizontal lines at each Y layer
+      for (let ly = 0; ly <= layersY; ly++) {
+        const y = (ly * gridH) / layersY;
+        for (let i = 0; i <= colsX; i++) {
+          const x = -halfFw + (i * fw) / colsX;
+          pts.push(x, y, -halfFl, x, y, halfFl);
+        }
+        for (let j = 0; j <= colsZ; j++) {
+          const z = -halfFl + (j * fl) / colsZ;
+          pts.push(-halfFw, y, z, halfFw, y, z);
+        }
+      }
+
+      // Vertical lines at each grid intersection
       for (let i = 0; i <= colsX; i++) {
         const x = -halfFw + (i * fw) / colsX;
-        pts.push(x, y, -halfFl, x, y, halfFl);
+        for (let j = 0; j <= colsZ; j++) {
+          const z = -halfFl + (j * fl) / colsZ;
+          pts.push(x, 0, z, x, gridH, z);
+        }
       }
-      // Lines along Z
+    } else {
+      // Flat grid
+      for (let i = 0; i <= colsX; i++) {
+        const x = -halfFw + (i * fw) / colsX;
+        pts.push(x, 0, -halfFl, x, 0, halfFl);
+      }
       for (let j = 0; j <= colsZ; j++) {
         const z = -halfFl + (j * fl) / colsZ;
-        pts.push(-halfFw, y, z, halfFw, y, z);
-      }
-    }
-
-    // Vertical lines at each grid intersection
-    for (let i = 0; i <= colsX; i++) {
-      const x = -halfFw + (i * fw) / colsX;
-      for (let j = 0; j <= colsZ; j++) {
-        const z = -halfFl + (j * fl) / colsZ;
-        pts.push(x, 0, z, x, gridH, z);
+        pts.push(-halfFw, 0, z, halfFw, 0, z);
       }
     }
 
@@ -326,7 +342,8 @@
         opacity: Math.max(0, Math.min(1, gridOpacity)),
       }),
     );
-    gridLines.position.y = 0.02;
+    gridLines.position.y = 0.02 + (grid3D ? 0 : Math.max(0, gridOffsetY));
+    gridLines.visible = gridVisible;
     scene.add(gridLines);
   }
 

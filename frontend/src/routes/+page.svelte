@@ -28,6 +28,8 @@
   let gridFit = $state(true);
   let gridOpacity = $state(0.5);
   let gridOffsetY = $state(0);
+  let grid3D = $state(false);
+  let gridVisible = $state(true);
 
   let cameraFree = $state(false);
 
@@ -230,17 +232,18 @@
           <span class="text-xs text-gray-500">fit</span>
         </label>
       </div>
-      <label class="flex flex-col gap-1 mt-1">
-        <span class="text-xs text-gray-400"
-          >прозрачность: {gridOpacity.toFixed(2)}</span
-        >
+      <label class="flex flex-col gap-0.5 mt-1">
+        <span class="text-xs text-gray-400">прозрачность</span>
         <input
-          type="range"
-          min="0"
-          max="1"
+          type="number"
           step="0.05"
+          min="0.05"
+          max="1"
           bind:value={gridOpacity}
-          class="accent-yellow-500"
+          oninput={() => {
+            gridOpacity = clamp2(gridOpacity);
+          }}
+          class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-yellow-500 outline-none"
         />
       </label>
       <label class="flex flex-col gap-0.5 mt-1">
@@ -256,9 +259,23 @@
           class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-yellow-500 outline-none"
         />
       </label>
+      <label class="flex items-center gap-2 mt-1">
+        <input
+          type="checkbox"
+          bind:checked={gridVisible}
+          class="accent-yellow-500"
+        />
+        <span class="text-xs text-gray-400">показать сетку</span>
+      </label>
+      <label class="flex items-center gap-2 mt-1">
+        <input
+          type="checkbox"
+          bind:checked={grid3D}
+          class="accent-yellow-500"
+        />
+        <span class="text-xs text-gray-400">3D сетка (кубы)</span>
+      </label>
     </div>
-
-    <!-- Camera mode -->
     <div class="flex flex-col gap-2">
       <span class="text-sm font-medium text-purple-400">Камера</span>
       <label class="flex items-center gap-2">
@@ -404,6 +421,8 @@
       {gridLength}
       {gridOpacity}
       {gridOffsetY}
+      {grid3D}
+      {gridVisible}
       {cameraFree}
       {assets}
       {selectedId}
