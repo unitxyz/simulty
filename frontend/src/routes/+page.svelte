@@ -30,6 +30,9 @@
   let gridOffsetY = $state(0);
   let grid3D = $state(false);
   let gridVisible = $state(true);
+  let gridLayerX = $state(0);
+  let gridLayerY = $state(0);
+  let gridLayerZ = $state(0);
 
   let cameraFree = $state(false);
 
@@ -275,6 +278,45 @@
         />
         <span class="text-xs text-gray-400">3D сетка (кубы)</span>
       </label>
+      {#if grid3D}
+        <div class="flex flex-col gap-1 mt-1 pl-2 border-l border-gray-700">
+          <span class="text-xs text-gray-500"
+            >слой (0 = все), отсчёт от угла ↖</span
+          >
+          <div class="flex gap-2">
+            <label class="flex flex-col gap-0.5 flex-1">
+              <span class="text-xs text-gray-500">X</span>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                bind:value={gridLayerX}
+                class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-yellow-500 outline-none"
+              />
+            </label>
+            <label class="flex flex-col gap-0.5 flex-1">
+              <span class="text-xs text-gray-500">Y</span>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                bind:value={gridLayerY}
+                class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-yellow-500 outline-none"
+              />
+            </label>
+            <label class="flex flex-col gap-0.5 flex-1">
+              <span class="text-xs text-gray-500">Z</span>
+              <input
+                type="number"
+                step="1"
+                min="0"
+                bind:value={gridLayerZ}
+                class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-yellow-500 outline-none"
+              />
+            </label>
+          </div>
+        </div>
+      {/if}
     </div>
     <div class="flex flex-col gap-2">
       <span class="text-sm font-medium text-purple-400">Камера</span>
@@ -423,6 +465,9 @@
       {gridOffsetY}
       {grid3D}
       {gridVisible}
+      {gridLayerX}
+      {gridLayerY}
+      {gridLayerZ}
       {cameraFree}
       {assets}
       {selectedId}

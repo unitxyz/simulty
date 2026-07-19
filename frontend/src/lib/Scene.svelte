@@ -26,6 +26,9 @@
     gridOffsetY = 0,
     grid3D = false,
     gridVisible = true,
+    gridLayerX = 0,
+    gridLayerY = 0,
+    gridLayerZ = 0,
     cameraFree = false,
     assets = [] as AssetData[],
     selectedId = null as string | null,
@@ -42,6 +45,9 @@
     gridOffsetY?: number;
     grid3D?: boolean;
     gridVisible?: boolean;
+    gridLayerX?: number;
+    gridLayerY?: number;
+    gridLayerZ?: number;
     cameraFree?: boolean;
     assets?: AssetData[];
     selectedId?: string | null;
@@ -166,6 +172,7 @@
   let spaceWalls: THREE.Mesh;
   let fieldMesh: THREE.Mesh;
   let gridLines: THREE.LineSegments;
+  let originMarker: THREE.Mesh;
 
   // Asset meshes
   let assetGroup: THREE.Group;
@@ -243,6 +250,11 @@
       scene.remove(gridLines);
       gridLines.geometry.dispose();
     }
+    if (originMarker) {
+      scene.remove(originMarker);
+      originMarker.geometry.dispose();
+      originMarker = undefined as any;
+    }
 
     const sw = Math.max(1, spaceWidth);
     const sl = Math.max(1, spaceLength);
@@ -299,16 +311,57 @@
       const gridH = Math.max(0, gridOffsetY);
       const layersY = Math.max(1, Math.round(gridH / Math.max(gw, gl)));
 
+      // Layer filter: 0 = show all, >0 = show only that layer (1-indexed)
+      const fX = Math.round(gridLayerX);
+      const fY = Math.round(gridLayerY);
+      const fZ = Math.round(gridLayerZ);
+      const hasFilter = fX > 0 || fY > 0 || fZ > 0;
+
+      // Helper: should we show a line at grid index (ix, iz) on layer ly?
+      // Origin = top-left corner: X from left (-halfFw), Z from top (-halfFl), Y from bottom
+      function showLine(ix: number, iz: number, ly: number): boolean {
+        if (!hasFilter) return true;
+        if (fX > 0 && ix + 1 !== fX) return false;
+        if (fZ > 0 && iz + 1 !== fZ) return false;
+        if (fY > 0 && ly + 1 !== fY) return false;
+        return true;
+      }
+
       // Horizontal lines at each Y layer
       for (let ly = 0; ly <= layersY; ly++) {
         const y = (ly * gridH) / layersY;
+        // Lines along X (varying ix, full z range)
         for (let i = 0; i <= colsX; i++) {
           const x = -halfFw + (i * fw) / colsX;
-          pts.push(x, y, -halfFl, x, y, halfFl);
+          // This line spans all z, show if any z index passes filter
+          let visible = false;
+          if (!hasFilter) {
+            visible = true;
+          } else {
+            for (let j = 0; j <= colsZ; j++) {
+              if (showLine(i, j, ly)) {
+                visible = true;
+                break;
+              }
+            }
+          }
+          if (visible) pts.push(x, y, -halfFl, x, y, halfFl);
         }
+        // Lines along Z (varying iz, full x range)
         for (let j = 0; j <= colsZ; j++) {
           const z = -halfFl + (j * fl) / colsZ;
-          pts.push(-halfFw, y, z, halfFw, y, z);
+          let visible = false;
+          if (!hasFilter) {
+            visible = true;
+          } else {
+            for (let i = 0; i <= colsX; i++) {
+              if (showLine(i, j, ly)) {
+                visible = true;
+                break;
+              }
+            }
+          }
+          if (visible) pts.push(-halfFw, y, z, halfFw, y, z);
         }
       }
 
@@ -317,7 +370,19 @@
         const x = -halfFw + (i * fw) / colsX;
         for (let j = 0; j <= colsZ; j++) {
           const z = -halfFl + (j * fl) / colsZ;
-          pts.push(x, 0, z, x, gridH, z);
+          let visible = false;
+          if (!hasFilter) {
+            visible = true;
+          } else {
+            // Show vertical line if any layer passes filter
+            for (let ly = 0; ly <= layersY; ly++) {
+              if (showLine(i, j, ly)) {
+                visible = true;
+                break;
+              }
+            }
+          }
+          if (visible) pts.push(x, 0, z, x, gridH, z);
         }
       }
     } else {
@@ -345,6 +410,25 @@
     gridLines.position.y = 0.02 + (grid3D ? 0 : Math.max(0, gridOffsetY));
     gridLines.visible = gridVisible;
     scene.add(gridLines);
+
+    // Origin corner marker — orange 0.1x0.1 square at top-left corner
+    if (originMarker) {
+      scene.remove(originMarker);
+      originMarker.geometry.dispose();
+    }
+    if (grid3D && gridVisible) {
+      const markerGeo = new THREE.PlaneGeometry(0.1, 0.1);
+      const markerMat = new THREE.MeshBasicMaterial({
+        color: 0xff8800,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.9,
+      });
+      originMarker = new THREE.Mesh(markerGeo, markerMat);
+      originMarker.rotation.x = -Math.PI / 2;
+      originMarker.position.set(-halfFw + 0.05, 0.03, -halfFl + 0.05);
+      scene.add(originMarker);
+    }
   }
 
   function buildAssets() {
