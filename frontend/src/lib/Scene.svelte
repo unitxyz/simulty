@@ -410,16 +410,19 @@
       originMarker.geometry.dispose();
     }
     if (grid3D && gridVisible) {
-      const markerGeo = new THREE.PlaneGeometry(0.1, 0.1);
+      const markerGeo = new THREE.PlaneGeometry(0.05, 0.05);
       const markerMat = new THREE.MeshBasicMaterial({
         color: 0xff8800,
         side: THREE.DoubleSide,
         transparent: true,
         opacity: 0.9,
+        depthWrite: false,
+        depthTest: false,
       });
       originMarker = new THREE.Mesh(markerGeo, markerMat);
       originMarker.rotation.x = -Math.PI / 2;
-      originMarker.position.set(-halfFw + 0.05, 0.03, -halfFl + 0.05);
+      originMarker.position.set(-halfFw + 0.025, 0.012, -halfFl + 0.025);
+      originMarker.renderOrder = 999;
       scene.add(originMarker);
     }
   }
