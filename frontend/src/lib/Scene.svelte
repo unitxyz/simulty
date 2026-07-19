@@ -10,6 +10,7 @@
     fieldLength = 10,
     gridWidth = 1,
     gridLength = 1,
+    gridOpacity = 0.5,
     cameraFree = false,
   }: {
     spaceWidth?: number;
@@ -18,6 +19,7 @@
     fieldLength?: number;
     gridWidth?: number;
     gridLength?: number;
+    gridOpacity?: number;
     cameraFree?: boolean;
   } = $props();
 
@@ -37,13 +39,35 @@
   let flyPitch = 0;
   const flySpeed = 0.3;
 
+  const flyKeyCodes = new Set([
+    "KeyW",
+    "KeyA",
+    "KeyS",
+    "KeyD",
+    "Space",
+    "ShiftLeft",
+    "ShiftRight",
+    "ControlLeft",
+    "ControlRight",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+  ]);
+
   function onKeyDown(e: KeyboardEvent) {
     if (!cameraFree) return;
-    flyKeys[e.code] = true;
+    if (flyKeyCodes.has(e.code)) {
+      e.preventDefault();
+      flyKeys[e.code] = true;
+    }
   }
   function onKeyUp(e: KeyboardEvent) {
     if (!cameraFree) return;
-    flyKeys[e.code] = false;
+    if (flyKeyCodes.has(e.code)) {
+      e.preventDefault();
+      flyKeys[e.code] = false;
+    }
   }
   function onFlyMouseDown(e: MouseEvent) {
     if (!cameraFree) return;
@@ -108,6 +132,7 @@
       flyPitch = euler.x;
     } else {
       controls.enabled = true;
+      flyKeys = {};
     }
   }
 
@@ -139,6 +164,7 @@
     controls.dampingFactor = 0.05;
     controls.maxDistance = 200;
     controls.minDistance = 2;
+    controls.enablePan = false;
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambientLight);
@@ -230,7 +256,11 @@
     gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
     gridLines = new THREE.LineSegments(
       gridGeo,
-      new THREE.LineBasicMaterial({ color: 0x888888 }),
+      new THREE.LineBasicMaterial({
+        color: 0x888888,
+        transparent: true,
+        opacity: Math.max(0, Math.min(1, gridOpacity)),
+      }),
     );
     gridLines.position.y = 0.02;
     scene.add(gridLines);

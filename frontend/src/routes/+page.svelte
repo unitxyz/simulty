@@ -12,6 +12,7 @@
   let gridWidth = $state(1);
   let gridLength = $state(1);
   let gridFit = $state(true);
+  let gridOpacity = $state(0.5);
 
   let cameraFree = $state(false);
 
@@ -29,6 +30,10 @@
     if (!gridFit) return;
     if (which === "w") gridLength = gridWidth;
     else gridWidth = gridLength;
+  }
+
+  function clamp2(v: number): number {
+    return Math.round(v * 100) / 100;
   }
 </script>
 
@@ -51,7 +56,10 @@
             step="0.01"
             min="1"
             bind:value={spaceWidth}
-            oninput={() => syncSpace("w")}
+            oninput={() => {
+              spaceWidth = clamp2(spaceWidth);
+              syncSpace("w");
+            }}
             class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-blue-500 outline-none"
           />
         </label>
@@ -62,7 +70,10 @@
             step="0.01"
             min="1"
             bind:value={spaceLength}
-            oninput={() => syncSpace("l")}
+            oninput={() => {
+              spaceLength = clamp2(spaceLength);
+              syncSpace("l");
+            }}
             class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-blue-500 outline-none"
           />
         </label>
@@ -88,7 +99,10 @@
             step="0.01"
             min="1"
             bind:value={fieldWidth}
-            oninput={() => syncField("w")}
+            oninput={() => {
+              fieldWidth = clamp2(fieldWidth);
+              syncField("w");
+            }}
             class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-green-500 outline-none"
           />
         </label>
@@ -99,7 +113,10 @@
             step="0.01"
             min="1"
             bind:value={fieldLength}
-            oninput={() => syncField("l")}
+            oninput={() => {
+              fieldLength = clamp2(fieldLength);
+              syncField("l");
+            }}
             class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-green-500 outline-none"
           />
         </label>
@@ -125,7 +142,10 @@
             step="0.01"
             min="0.1"
             bind:value={gridWidth}
-            oninput={() => syncGrid("w")}
+            oninput={() => {
+              gridWidth = clamp2(gridWidth);
+              syncGrid("w");
+            }}
             class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-yellow-500 outline-none"
           />
         </label>
@@ -136,7 +156,10 @@
             step="0.01"
             min="0.1"
             bind:value={gridLength}
-            oninput={() => syncGrid("l")}
+            oninput={() => {
+              gridLength = clamp2(gridLength);
+              syncGrid("l");
+            }}
             class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-yellow-500 outline-none"
           />
         </label>
@@ -149,6 +172,19 @@
           <span class="text-xs text-gray-500">fit</span>
         </label>
       </div>
+      <label class="flex flex-col gap-1 mt-1">
+        <span class="text-xs text-gray-400"
+          >прозрачность: {gridOpacity.toFixed(2)}</span
+        >
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          bind:value={gridOpacity}
+          class="accent-yellow-500"
+        />
+      </label>
     </div>
 
     <!-- Camera mode -->
@@ -176,6 +212,7 @@
       {fieldLength}
       {gridWidth}
       {gridLength}
+      {gridOpacity}
       {cameraFree}
     />
   </div>
