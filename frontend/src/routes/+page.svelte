@@ -5,13 +5,15 @@
   let spaceLength = $state(20);
   let spaceFit = $state(true);
 
-  let fieldWidth = $state(18);
-  let fieldLength = $state(18);
+  let fieldWidth = $state(10);
+  let fieldLength = $state(10);
   let fieldFit = $state(true);
 
   let gridWidth = $state(1);
   let gridLength = $state(1);
   let gridFit = $state(true);
+
+  let cameraFree = $state(false);
 
   function syncSpace(which: "w" | "l") {
     if (!spaceFit) return;
@@ -148,6 +150,21 @@
         </label>
       </div>
     </div>
+
+    <!-- Camera mode -->
+    <div class="flex flex-col gap-2">
+      <span class="text-sm font-medium text-purple-400">Камера</span>
+      <label class="flex items-center gap-2">
+        <input
+          type="checkbox"
+          bind:checked={cameraFree}
+          class="accent-purple-500"
+        />
+        <span class="text-sm text-gray-300"
+          >Free mode (WASD + Space/Shift, ЛКМ — осмотр)</span
+        >
+      </label>
+    </div>
   </div>
 
   <!-- 3D Scene -->
@@ -159,6 +176,7 @@
       {fieldLength}
       {gridWidth}
       {gridLength}
+      {cameraFree}
     />
   </div>
 </div>

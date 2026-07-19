@@ -6,10 +6,11 @@
   let {
     spaceWidth = 20,
     spaceLength = 20,
-    fieldWidth = 18,
-    fieldLength = 18,
+    fieldWidth = 10,
+    fieldLength = 10,
     gridWidth = 1,
     gridLength = 1,
+    cameraFree = false,
   }: {
     spaceWidth?: number;
     spaceLength?: number;
@@ -17,6 +18,7 @@
     fieldLength?: number;
     gridWidth?: number;
     gridLength?: number;
+    cameraFree?: boolean;
   } = $props();
 
   let container: HTMLDivElement;
@@ -25,6 +27,89 @@
   let renderer: THREE.WebGLRenderer;
   let controls: OrbitControls;
   let animationId: number;
+
+  // Free camera state
+  let flyKeys: Record<string, boolean> = {};
+  let flyMouseDragging = false;
+  let flyLastX = 0;
+  let flyLastY = 0;
+  let flyYaw = 0;
+  let flyPitch = 0;
+  const flySpeed = 0.3;
+
+  function onKeyDown(e: KeyboardEvent) {
+    if (!cameraFree) return;
+    flyKeys[e.code] = true;
+  }
+  function onKeyUp(e: KeyboardEvent) {
+    if (!cameraFree) return;
+    flyKeys[e.code] = false;
+  }
+  function onFlyMouseDown(e: MouseEvent) {
+    if (!cameraFree) return;
+    flyMouseDragging = true;
+    flyLastX = e.clientX;
+    flyLastY = e.clientY;
+  }
+  function onFlyMouseMove(e: MouseEvent) {
+    if (!cameraFree || !flyMouseDragging) return;
+    const dx = e.clientX - flyLastX;
+    const dy = e.clientY - flyLastY;
+    flyLastX = e.clientX;
+    flyLastY = e.clientY;
+    flyYaw -= dx * 0.005;
+    flyPitch -= dy * 0.005;
+    flyPitch = Math.max(
+      -Math.PI / 2 + 0.01,
+      Math.min(Math.PI / 2 - 0.01, flyPitch),
+    );
+  }
+  function onFlyMouseUp() {
+    flyMouseDragging = false;
+  }
+
+  function updateFlyCamera() {
+    if (!cameraFree || !camera) return;
+    // Apply rotation from yaw/pitch
+    const euler = new THREE.Euler(flyPitch, flyYaw, 0, "YXZ");
+    camera.quaternion.setFromEuler(euler);
+
+    // Movement relative to camera direction
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+      camera.quaternion,
+    );
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+    const up = new THREE.Vector3(0, 1, 0);
+
+    const move = new THREE.Vector3();
+    if (flyKeys["KeyW"]) move.add(forward);
+    if (flyKeys["KeyS"]) move.sub(forward);
+    if (flyKeys["KeyA"]) move.sub(right);
+    if (flyKeys["KeyD"]) move.add(right);
+    if (flyKeys["Space"]) move.add(up);
+    if (flyKeys["ShiftLeft"] || flyKeys["ShiftRight"]) move.sub(up);
+
+    if (move.lengthSq() > 0) {
+      move.normalize().multiplyScalar(flySpeed);
+      camera.position.add(move);
+    }
+  }
+
+  function setupCameraMode() {
+    if (!controls || !camera) return;
+    if (cameraFree) {
+      controls.enabled = false;
+      // Sync yaw/pitch from current camera orientation
+      const euler = new THREE.Euler().setFromQuaternion(
+        camera.quaternion,
+        "YXZ",
+      );
+      flyYaw = euler.y;
+      flyPitch = euler.x;
+    } else {
+      controls.enabled = true;
+    }
+  }
 
   let spaceEdges: THREE.LineSegments;
   let spaceWalls: THREE.Mesh;
@@ -153,7 +238,11 @@
 
   function animate() {
     animationId = requestAnimationFrame(animate);
-    controls.update();
+    if (cameraFree) {
+      updateFlyCamera();
+    } else {
+      controls.update();
+    }
     renderer.render(scene, camera);
   }
 
@@ -167,13 +256,22 @@
   onMount(() => {
     initScene();
     window.addEventListener("resize", onResize);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("mousemove", onFlyMouseMove);
+    window.addEventListener("mouseup", onFlyMouseUp);
   });
 
   onDestroy(() => {
     if (typeof cancelAnimationFrame !== "undefined")
       cancelAnimationFrame(animationId);
-    if (typeof window !== "undefined")
+    if (typeof window !== "undefined") {
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("mousemove", onFlyMouseMove);
+      window.removeEventListener("mouseup", onFlyMouseUp);
+    }
     if (renderer) {
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {
@@ -187,6 +285,14 @@
       buildScene();
     }
   });
+
+  $effect(() => {
+    setupCameraMode();
+  });
 </script>
 
-<div bind:this={container} class="w-full h-full"></div>
+<div
+  bind:this={container}
+  class="w-full h-full"
+  onmousedown={onFlyMouseDown}
+></div>
