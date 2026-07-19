@@ -3,6 +3,18 @@
   import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   import { onMount, onDestroy } from "svelte";
 
+  interface AssetData {
+    id: string;
+    type: "box";
+    name: string;
+    x: number;
+    y: number;
+    z: number;
+    width: number;
+    height: number;
+    depth: number;
+  }
+
   let {
     spaceWidth = 20,
     spaceLength = 20,
@@ -12,6 +24,10 @@
     gridLength = 1,
     gridOpacity = 0.5,
     cameraFree = false,
+    assets = [] as AssetData[],
+    selectedId = null as string | null,
+    onSelect = (_id: string | null) => {},
+    onMove = (_id: string, _x: number, _y: number, _z: number) => {},
   }: {
     spaceWidth?: number;
     spaceLength?: number;
@@ -21,6 +37,10 @@
     gridLength?: number;
     gridOpacity?: number;
     cameraFree?: boolean;
+    assets?: AssetData[];
+    selectedId?: string | null;
+    onSelect?: (id: string | null) => void;
+    onMove?: (id: string, x: number, y: number, z: number) => void;
   } = $props();
 
   let container: HTMLDivElement;
@@ -141,6 +161,28 @@
   let fieldMesh: THREE.Mesh;
   let gridLines: THREE.LineSegments;
 
+  // Asset meshes
+  let assetGroup: THREE.Group;
+  let assetMeshes = new Map<string, THREE.Mesh>();
+  let selectionRing: THREE.Mesh;
+
+  // Gizmo (axis arrows)
+  let gizmoGroup: THREE.Group;
+  let gizmoArrows: THREE.Mesh[] = [];
+  let gizmoAxis: "x" | "y" | "z" | null = null;
+  let gizmoStartPos = new THREE.Vector3();
+  let gizmoDragId: string | null = null;
+
+  // Interaction state
+  let raycaster = new THREE.Raycaster();
+  let pointer = new THREE.Vector2();
+  let isDragging = false;
+  let dragId: string | null = null;
+  let dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  let dragOffset = new THREE.Vector3();
+  let pointerDownPos = { x: 0, y: 0 };
+  let pointerDownTime = 0;
+
   function initScene() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
@@ -175,6 +217,7 @@
 
     buildScene();
     animate();
+    buildAssets();
   }
 
   function buildScene() {
@@ -266,6 +309,310 @@
     scene.add(gridLines);
   }
 
+  function buildAssets() {
+    if (!assetGroup) {
+      assetGroup = new THREE.Group();
+      scene.add(assetGroup);
+    }
+
+    // Remove old meshes
+    for (const [id, mesh] of assetMeshes) {
+      assetGroup.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    assetMeshes.clear();
+
+    // Create new meshes (boxes)
+    for (const a of assets) {
+      const w = Math.max(0.01, a.width);
+      const h = Math.max(0.01, a.height);
+      const d = Math.max(0.01, a.depth);
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: selectedId === a.id ? 0x442200 : 0x000000,
+        metalness: 0.1,
+        roughness: 0.5,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(a.x, a.y, a.z);
+      mesh.userData.assetId = a.id;
+      assetGroup.add(mesh);
+      assetMeshes.set(a.id, mesh);
+    }
+
+    // Selection ring
+    if (selectionRing) {
+      assetGroup.remove(selectionRing);
+      selectionRing.geometry.dispose();
+      selectionRing = undefined as any;
+    }
+    if (selectedId) {
+      const a = assets.find((a) => a.id === selectedId);
+      if (a) {
+        const ringR = Math.max(0.01, Math.max(a.width, a.depth) / 2 + 0.05);
+        const ringGeo = new THREE.RingGeometry(ringR, ringR + 0.03, 32);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xff8800,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.8,
+        });
+        selectionRing = new THREE.Mesh(ringGeo, ringMat);
+        selectionRing.rotation.x = -Math.PI / 2;
+        selectionRing.position.set(a.x, 0.03, a.z);
+        assetGroup.add(selectionRing);
+      }
+    }
+
+    buildGizmo();
+  }
+
+  function buildGizmo() {
+    if (gizmoGroup) {
+      assetGroup.remove(gizmoGroup);
+      for (const arrow of gizmoArrows) {
+        arrow.geometry.dispose();
+      }
+      gizmoArrows = [];
+    }
+
+    if (!selectedId) return;
+    const a = assets.find((a) => a.id === selectedId);
+    if (!a) return;
+
+    gizmoGroup = new THREE.Group();
+
+    const arrowLen = Math.max(a.width, a.height, a.depth) * 0.8 + 0.3;
+    const arrowRadius = 0.02;
+    const headRadius = 0.05;
+    const headLen = 0.12;
+
+    const axes: { dir: THREE.Vector3; color: number; name: "x" | "y" | "z" }[] =
+      [
+        { dir: new THREE.Vector3(1, 0, 0), color: 0xff3333, name: "x" },
+        { dir: new THREE.Vector3(0, 1, 0), color: 0x33ff33, name: "y" },
+        { dir: new THREE.Vector3(0, 0, 1), color: 0x3333ff, name: "z" },
+      ];
+
+    for (const axis of axes) {
+      // Arrow shaft (cylinder)
+      const shaftGeo = new THREE.CylinderGeometry(
+        arrowRadius,
+        arrowRadius,
+        arrowLen,
+        8,
+      );
+      const shaftMat = new THREE.MeshBasicMaterial({ color: axis.color });
+      const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+
+      // Arrow head (cone)
+      const headGeo = new THREE.ConeGeometry(headRadius, headLen, 12);
+      const headMat = new THREE.MeshBasicMaterial({ color: axis.color });
+      const head = new THREE.Mesh(headGeo, headMat);
+
+      // Group for this axis
+      const arrowGroup = new THREE.Group();
+      shaft.position.y = arrowLen / 2;
+      head.position.y = arrowLen + headLen / 2;
+      arrowGroup.add(shaft);
+      arrowGroup.add(head);
+
+      // Orient along axis direction
+      if (axis.name === "x") {
+        arrowGroup.rotation.z = -Math.PI / 2;
+      } else if (axis.name === "z") {
+        arrowGroup.rotation.x = Math.PI / 2;
+      }
+
+      arrowGroup.userData.axis = axis.name;
+      arrowGroup.userData.isGizmo = true;
+      gizmoGroup.add(arrowGroup);
+      gizmoArrows.push(shaft, head);
+    }
+
+    gizmoGroup.position.set(a.x, a.y, a.z);
+    assetGroup.add(gizmoGroup);
+  }
+
+  function getPointerCoords(e: MouseEvent) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  function pickAsset(): THREE.Mesh | null {
+    raycaster.setFromCamera(pointer, camera);
+    const meshes = Array.from(assetMeshes.values());
+    const hits = raycaster.intersectObjects(meshes, false);
+    return hits.length > 0 ? (hits[0].object as THREE.Mesh) : null;
+  }
+
+  function pickGizmo(): "x" | "y" | "z" | null {
+    if (!gizmoGroup) return null;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(gizmoArrows, false);
+    if (hits.length > 0) {
+      // Walk up to find the group with axis data
+      let obj: THREE.Object3D | null = hits[0].object;
+      while (obj) {
+        if (obj.userData && obj.userData.axis) {
+          return obj.userData.axis as "x" | "y" | "z";
+        }
+        obj = obj.parent;
+      }
+    }
+    return null;
+  }
+
+  function onSceneMouseDown(e: MouseEvent) {
+    if (cameraFree) {
+      onFlyMouseDown(e);
+      return;
+    }
+    if (e.button !== 0) return;
+    getPointerCoords(e);
+    pointerDownPos = { x: e.clientX, y: e.clientY };
+    pointerDownTime = Date.now();
+
+    // Check gizmo first
+    const axis = pickGizmo();
+    if (axis && selectedId) {
+      gizmoAxis = axis;
+      gizmoDragId = selectedId;
+      isDragging = false;
+      const a = assets.find((a) => a.id === selectedId);
+      if (a) {
+        gizmoStartPos.set(a.x, a.y, a.z);
+        // Set drag plane perpendicular to the axis, facing camera
+        const axisVec = new THREE.Vector3(
+          axis === "x" ? 1 : 0,
+          axis === "y" ? 1 : 0,
+          axis === "z" ? 1 : 0,
+        );
+        // Use a plane that contains the axis and is most facing the camera
+        const camDir = new THREE.Vector3();
+        camera.getWorldDirection(camDir);
+        // Pick plane normal as the axis direction projected onto camera-facing
+        // Simplest: use a plane whose normal is the axis itself
+        dragPlane.setFromNormalAndCoplanarPoint(axisVec, gizmoStartPos);
+        raycaster.setFromCamera(pointer, camera);
+        const intersect = new THREE.Vector3();
+        raycaster.ray.intersectPlane(dragPlane, intersect);
+        dragOffset.copy(gizmoStartPos).sub(intersect);
+      }
+      controls.enabled = false;
+      return;
+    }
+
+    // Check asset
+    const hit = pickAsset();
+    if (hit) {
+      const id = hit.userData.assetId as string;
+      onSelect(id);
+      dragId = id;
+      isDragging = false;
+
+      const a = assets.find((a) => a.id === id);
+      if (a) {
+        dragPlane.set(new THREE.Vector3(0, 1, 0), -a.y);
+        raycaster.setFromCamera(pointer, camera);
+        const intersect = new THREE.Vector3();
+        raycaster.ray.intersectPlane(dragPlane, intersect);
+        dragOffset.set(a.x - intersect.x, 0, a.z - intersect.z);
+      }
+      controls.enabled = false;
+    }
+  }
+
+  function onSceneMouseMove(e: MouseEvent) {
+    if (cameraFree) {
+      onFlyMouseMove(e);
+      return;
+    }
+
+    // Gizmo drag
+    if (gizmoAxis && gizmoDragId) {
+      const dx = e.clientX - pointerDownPos.x;
+      const dy = e.clientY - pointerDownPos.y;
+      if (!isDragging && Math.sqrt(dx * dx + dy * dy) > 3) {
+        isDragging = true;
+      }
+      if (!isDragging) return;
+
+      getPointerCoords(e);
+      raycaster.setFromCamera(pointer, camera);
+      const intersect = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(dragPlane, intersect)) {
+        const newCoord = intersect.add(dragOffset);
+        const a = assets.find((a) => a.id === gizmoDragId);
+        if (a) {
+          if (gizmoAxis === "x") {
+            onMove(gizmoDragId, newCoord.x, a.y, a.z);
+          } else if (gizmoAxis === "y") {
+            onMove(gizmoDragId, a.x, newCoord.y, a.z);
+          } else if (gizmoAxis === "z") {
+            onMove(gizmoDragId, a.x, a.y, newCoord.z);
+          }
+        }
+      }
+      return;
+    }
+
+    // Free drag (XZ plane)
+    if (!dragId) return;
+    const dx = e.clientX - pointerDownPos.x;
+    const dy = e.clientY - pointerDownPos.y;
+    if (!isDragging && Math.sqrt(dx * dx + dy * dy) > 3) {
+      isDragging = true;
+    }
+    if (!isDragging) return;
+
+    getPointerCoords(e);
+    raycaster.setFromCamera(pointer, camera);
+    const intersect = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(dragPlane, intersect)) {
+      const newX = intersect.x + dragOffset.x;
+      const newZ = intersect.z + dragOffset.z;
+      const a = assets.find((a) => a.id === dragId);
+      if (a) {
+        onMove(dragId, newX, a.y, newZ);
+      }
+    }
+  }
+
+  function onSceneMouseUp(e: MouseEvent) {
+    if (cameraFree) {
+      onFlyMouseUp();
+      return;
+    }
+
+    if (gizmoAxis) {
+      gizmoAxis = null;
+      gizmoDragId = null;
+      isDragging = false;
+      controls.enabled = true;
+      return;
+    }
+
+    if (dragId) {
+      dragId = null;
+      isDragging = false;
+      controls.enabled = true;
+      return;
+    }
+
+    // Click on empty space — deselect if quick click
+    const dt = Date.now() - pointerDownTime;
+    const dx = e.clientX - pointerDownPos.x;
+    const dy = e.clientY - pointerDownPos.y;
+    if (dt < 300 && Math.sqrt(dx * dx + dy * dy) < 5) {
+      getPointerCoords(e);
+      const hit = pickAsset();
+      if (!hit) onSelect(null);
+    }
+  }
+
   function animate() {
     animationId = requestAnimationFrame(animate);
     if (cameraFree) {
@@ -288,8 +635,8 @@
     window.addEventListener("resize", onResize);
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
-    window.addEventListener("mousemove", onFlyMouseMove);
-    window.addEventListener("mouseup", onFlyMouseUp);
+    window.addEventListener("mousemove", onSceneMouseMove);
+    window.addEventListener("mouseup", onSceneMouseUp);
   });
 
   onDestroy(() => {
@@ -299,8 +646,8 @@
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
-      window.removeEventListener("mousemove", onFlyMouseMove);
-      window.removeEventListener("mouseup", onFlyMouseUp);
+      window.removeEventListener("mousemove", onSceneMouseMove);
+      window.removeEventListener("mouseup", onSceneMouseUp);
     }
     if (renderer) {
       renderer.dispose();
@@ -319,10 +666,16 @@
   $effect(() => {
     setupCameraMode();
   });
+
+  $effect(() => {
+    if (scene) {
+      buildAssets();
+    }
+  });
 </script>
 
 <div
   bind:this={container}
   class="w-full h-full"
-  onmousedown={onFlyMouseDown}
+  onmousedown={onSceneMouseDown}
 ></div>
