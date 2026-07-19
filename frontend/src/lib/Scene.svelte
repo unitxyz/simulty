@@ -307,82 +307,75 @@
     const pts: number[] = [];
 
     if (grid3D) {
-      // 3D cubic grid (honeycomb-like cells rising from floor)
+      // 3D cubic grid
       const gridH = Math.max(0, gridOffsetY);
       const layersY = Math.max(1, Math.round(gridH / Math.max(gw, gl)));
+      const cellW = fw / colsX;
+      const cellD = fl / colsZ;
+      const cellH = gridH / layersY;
 
-      // Layer filter: 0 = show all, >0 = show only that layer (1-indexed)
+      // Layer filter: 0 = no filter on that axis, >0 = 1-indexed
       const fX = Math.round(gridLayerX);
       const fY = Math.round(gridLayerY);
       const fZ = Math.round(gridLayerZ);
       const hasFilter = fX > 0 || fY > 0 || fZ > 0;
 
-      // Helper: should we show a line at grid index (ix, iz) on layer ly?
-      // Origin = top-left corner: X from left (-halfFw), Z from top (-halfFl), Y from bottom
-      function showLine(ix: number, iz: number, ly: number): boolean {
-        if (!hasFilter) return true;
-        if (fX > 0 && ix + 1 !== fX) return false;
-        if (fZ > 0 && iz + 1 !== fZ) return false;
-        if (fY > 0 && ly + 1 !== fY) return false;
-        return true;
+      // Helper: push 12 edges of a cube cell at (ix, iy, iz)
+      function pushCubeEdges(ix: number, iy: number, iz: number) {
+        const x0 = -halfFw + ix * cellW;
+        const x1 = x0 + cellW;
+        const y0 = iy * cellH;
+        const y1 = y0 + cellH;
+        const z0 = -halfFl + iz * cellD;
+        const z1 = z0 + cellD;
+        // Bottom face
+        pts.push(x0, y0, z0, x1, y0, z0);
+        pts.push(x1, y0, z0, x1, y0, z1);
+        pts.push(x1, y0, z1, x0, y0, z1);
+        pts.push(x0, y0, z1, x0, y0, z0);
+        // Top face
+        pts.push(x0, y1, z0, x1, y1, z0);
+        pts.push(x1, y1, z0, x1, y1, z1);
+        pts.push(x1, y1, z1, x0, y1, z1);
+        pts.push(x0, y1, z1, x0, y1, z0);
+        // Vertical edges
+        pts.push(x0, y0, z0, x0, y1, z0);
+        pts.push(x1, y0, z0, x1, y1, z0);
+        pts.push(x1, y0, z1, x1, y1, z1);
+        pts.push(x0, y0, z1, x0, y1, z1);
       }
 
-      // Horizontal lines at each Y layer
-      for (let ly = 0; ly <= layersY; ly++) {
-        const y = (ly * gridH) / layersY;
-        // Lines along X (varying ix, full z range)
+      if (!hasFilter) {
+        // Draw full grid (all lines like before)
+        for (let ly = 0; ly <= layersY; ly++) {
+          const y = (ly * gridH) / layersY;
+          for (let i = 0; i <= colsX; i++) {
+            const x = -halfFw + (i * fw) / colsX;
+            pts.push(x, y, -halfFl, x, y, halfFl);
+          }
+          for (let j = 0; j <= colsZ; j++) {
+            const z = -halfFl + (j * fl) / colsZ;
+            pts.push(-halfFw, y, z, halfFw, y, z);
+          }
+        }
         for (let i = 0; i <= colsX; i++) {
           const x = -halfFw + (i * fw) / colsX;
-          // This line spans all z, show if any z index passes filter
-          let visible = false;
-          if (!hasFilter) {
-            visible = true;
-          } else {
-            for (let j = 0; j <= colsZ; j++) {
-              if (showLine(i, j, ly)) {
-                visible = true;
-                break;
-              }
-            }
+          for (let j = 0; j <= colsZ; j++) {
+            const z = -halfFl + (j * fl) / colsZ;
+            pts.push(x, 0, z, x, gridH, z);
           }
-          if (visible) pts.push(x, y, -halfFl, x, y, halfFl);
         }
-        // Lines along Z (varying iz, full x range)
-        for (let j = 0; j <= colsZ; j++) {
-          const z = -halfFl + (j * fl) / colsZ;
-          let visible = false;
-          if (!hasFilter) {
-            visible = true;
-          } else {
-            for (let i = 0; i <= colsX; i++) {
-              if (showLine(i, j, ly)) {
-                visible = true;
-                break;
-              }
+      } else {
+        // Draw only edges of matching cube cells
+        for (let ix = 0; ix < colsX; ix++) {
+          if (fX > 0 && ix + 1 !== fX) continue;
+          for (let iy = 0; iy < layersY; iy++) {
+            if (fY > 0 && iy + 1 !== fY) continue;
+            for (let iz = 0; iz < colsZ; iz++) {
+              if (fZ > 0 && iz + 1 !== fZ) continue;
+              pushCubeEdges(ix, iy, iz);
             }
           }
-          if (visible) pts.push(-halfFw, y, z, halfFw, y, z);
-        }
-      }
-
-      // Vertical lines at each grid intersection
-      for (let i = 0; i <= colsX; i++) {
-        const x = -halfFw + (i * fw) / colsX;
-        for (let j = 0; j <= colsZ; j++) {
-          const z = -halfFl + (j * fl) / colsZ;
-          let visible = false;
-          if (!hasFilter) {
-            visible = true;
-          } else {
-            // Show vertical line if any layer passes filter
-            for (let ly = 0; ly <= layersY; ly++) {
-              if (showLine(i, j, ly)) {
-                visible = true;
-                break;
-              }
-            }
-          }
-          if (visible) pts.push(x, 0, z, x, gridH, z);
         }
       }
     } else {
