@@ -383,31 +383,45 @@
 
     gizmoGroup = new THREE.Group();
 
-    const arrowLen = Math.max(a.width, a.height, a.depth) * 0.8 + 0.3;
-    const arrowRadius = 0.02;
-    const headRadius = 0.05;
-    const headLen = 0.12;
+    const arrowLen = 0.18;
+    const shaftSize = 0.008;
+    const headSize = 0.025;
+    const headLen = 0.045;
 
-    const axes: { dir: THREE.Vector3; color: number; name: "x" | "y" | "z" }[] =
-      [
-        { dir: new THREE.Vector3(1, 0, 0), color: 0xff3333, name: "x" },
-        { dir: new THREE.Vector3(0, 1, 0), color: 0x33ff33, name: "y" },
-        { dir: new THREE.Vector3(0, 0, 1), color: 0x3333ff, name: "z" },
-      ];
+    const axes: {
+      dir: THREE.Vector3;
+      color: number;
+      name: "x" | "y" | "z";
+      offset: number;
+    }[] = [
+      {
+        dir: new THREE.Vector3(1, 0, 0),
+        color: 0xff3333,
+        name: "x",
+        offset: a.width / 2,
+      },
+      {
+        dir: new THREE.Vector3(0, 1, 0),
+        color: 0x33ff33,
+        name: "y",
+        offset: a.height / 2,
+      },
+      {
+        dir: new THREE.Vector3(0, 0, 1),
+        color: 0x3333ff,
+        name: "z",
+        offset: a.depth / 2,
+      },
+    ];
 
     for (const axis of axes) {
-      // Arrow shaft (cylinder)
-      const shaftGeo = new THREE.CylinderGeometry(
-        arrowRadius,
-        arrowRadius,
-        arrowLen,
-        8,
-      );
+      // Arrow shaft (thin box)
+      const shaftGeo = new THREE.BoxGeometry(shaftSize, arrowLen, shaftSize);
       const shaftMat = new THREE.MeshBasicMaterial({ color: axis.color });
       const shaft = new THREE.Mesh(shaftGeo, shaftMat);
 
-      // Arrow head (cone)
-      const headGeo = new THREE.ConeGeometry(headRadius, headLen, 12);
+      // Arrow head (small box)
+      const headGeo = new THREE.BoxGeometry(headSize, headLen, headSize);
       const headMat = new THREE.MeshBasicMaterial({ color: axis.color });
       const head = new THREE.Mesh(headGeo, headMat);
 
@@ -418,11 +432,15 @@
       arrowGroup.add(shaft);
       arrowGroup.add(head);
 
-      // Orient along axis direction
+      // Orient along axis direction and offset to object surface
       if (axis.name === "x") {
         arrowGroup.rotation.z = -Math.PI / 2;
+        arrowGroup.position.x = axis.offset;
       } else if (axis.name === "z") {
         arrowGroup.rotation.x = Math.PI / 2;
+        arrowGroup.position.z = axis.offset;
+      } else {
+        arrowGroup.position.y = axis.offset;
       }
 
       arrowGroup.userData.axis = axis.name;
