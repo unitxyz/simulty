@@ -23,6 +23,7 @@
     gridWidth = 1,
     gridLength = 1,
     gridOpacity = 0.5,
+    gridOffsetY = 0,
     cameraFree = false,
     assets = [] as AssetData[],
     selectedId = null as string | null,
@@ -36,6 +37,7 @@
     gridWidth?: number;
     gridLength?: number;
     gridOpacity?: number;
+    gridOffsetY?: number;
     cameraFree?: boolean;
     assets?: AssetData[];
     selectedId?: string | null;
@@ -281,20 +283,39 @@
     fieldMesh.position.y = 0.01;
     scene.add(fieldMesh);
 
-    // Custom grid on the field (rectangular cells)
+    // 3D cubic grid (honeycomb-like cells rising from floor)
     const halfFw = fw / 2;
     const halfFl = fl / 2;
     const colsX = Math.max(1, Math.round(fw / gw));
     const colsZ = Math.max(1, Math.round(fl / gl));
+    const gridH = Math.max(0, gridOffsetY);
+    const layersY = Math.max(1, Math.round(gridH / Math.max(gw, gl)));
     const pts: number[] = [];
+
+    // Horizontal lines at each Y layer (floor + top + intermediate)
+    for (let ly = 0; ly <= layersY; ly++) {
+      const y = (ly * gridH) / layersY;
+      // Lines along X
+      for (let i = 0; i <= colsX; i++) {
+        const x = -halfFw + (i * fw) / colsX;
+        pts.push(x, y, -halfFl, x, y, halfFl);
+      }
+      // Lines along Z
+      for (let j = 0; j <= colsZ; j++) {
+        const z = -halfFl + (j * fl) / colsZ;
+        pts.push(-halfFw, y, z, halfFw, y, z);
+      }
+    }
+
+    // Vertical lines at each grid intersection
     for (let i = 0; i <= colsX; i++) {
       const x = -halfFw + (i * fw) / colsX;
-      pts.push(x, 0, -halfFl, x, 0, halfFl);
+      for (let j = 0; j <= colsZ; j++) {
+        const z = -halfFl + (j * fl) / colsZ;
+        pts.push(x, 0, z, x, gridH, z);
+      }
     }
-    for (let j = 0; j <= colsZ; j++) {
-      const z = -halfFl + (j * fl) / colsZ;
-      pts.push(-halfFw, 0, z, halfFw, 0, z);
-    }
+
     const gridGeo = new THREE.BufferGeometry();
     gridGeo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
     gridLines = new THREE.LineSegments(

@@ -27,6 +27,7 @@
   let gridLength = $state(1);
   let gridFit = $state(true);
   let gridOpacity = $state(0.5);
+  let gridOffsetY = $state(0);
 
   let cameraFree = $state(false);
 
@@ -242,6 +243,19 @@
           class="accent-yellow-500"
         />
       </label>
+      <label class="flex flex-col gap-0.5 mt-1">
+        <span class="text-xs text-gray-400">высота над полом (м)</span>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          bind:value={gridOffsetY}
+          oninput={() => {
+            gridOffsetY = clamp2(gridOffsetY);
+          }}
+          class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-yellow-500 outline-none"
+        />
+      </label>
     </div>
 
     <!-- Camera mode -->
@@ -389,6 +403,7 @@
       {gridWidth}
       {gridLength}
       {gridOpacity}
+      {gridOffsetY}
       {cameraFree}
       {assets}
       {selectedId}
