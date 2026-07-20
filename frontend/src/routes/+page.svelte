@@ -1,7 +1,9 @@
 <script module lang="ts">
+  export type CharacterGender = "male" | "female";
+
   export interface Asset {
     id: string;
-    type: "box";
+    type: "box" | "character";
     name: string;
     x: number;
     y: number;
@@ -12,6 +14,16 @@
     rotX: number;
     rotY: number;
     rotZ: number;
+    gender?: CharacterGender;
+    headRotX?: number;
+    leftArmRotX?: number;
+    rightArmRotX?: number;
+    leftForearmRotX?: number;
+    rightForearmRotX?: number;
+    leftLegRotX?: number;
+    rightLegRotX?: number;
+    leftShinRotX?: number;
+    rightShinRotX?: number;
   }
 </script>
 
@@ -38,6 +50,27 @@
   let gridLayerZ = $state(0);
 
   type AnchorMode = "minus" | "center" | "plus";
+  type JointKey =
+    | "headRotX"
+    | "leftArmRotX"
+    | "rightArmRotX"
+    | "leftForearmRotX"
+    | "rightForearmRotX"
+    | "leftLegRotX"
+    | "rightLegRotX"
+    | "leftShinRotX"
+    | "rightShinRotX";
+  const jointControls: [JointKey, string][] = [
+    ["headRotX", "голова"],
+    ["leftArmRotX", "левая рука"],
+    ["rightArmRotX", "правая рука"],
+    ["leftForearmRotX", "левое предплечье"],
+    ["rightForearmRotX", "правое предплечье"],
+    ["leftLegRotX", "левая нога"],
+    ["rightLegRotX", "правая нога"],
+    ["leftShinRotX", "левая голень"],
+    ["rightShinRotX", "правая голень"],
+  ];
   let resizeAnchor = $state<AnchorMode>("center");
   let rotateMode = $state(false);
 
@@ -67,6 +100,59 @@
     };
     assets = [...assets, asset];
     selectedId = id;
+  }
+
+  function addCharacter(gender: CharacterGender) {
+    assetCounter++;
+    const id = `asset-${assetCounter}`;
+    const isFemale = gender === "female";
+    const asset: Asset = {
+      id,
+      type: "character",
+      name: `${isFemale ? "Женщина" : "Мужчина"} ${assetCounter}`,
+      x: 0,
+      y: 0,
+      z: 0,
+      width: isFemale ? 0.48 : 0.56,
+      height: 1.8,
+      depth: 0.32,
+      rotX: 0,
+      rotY: 0,
+      rotZ: 0,
+      gender,
+      headRotX: 0,
+      leftArmRotX: 0,
+      rightArmRotX: 0,
+      leftForearmRotX: 0,
+      rightForearmRotX: 0,
+      leftLegRotX: 0,
+      rightLegRotX: 0,
+      leftShinRotX: 0,
+      rightShinRotX: 0,
+    };
+    assets = [...assets, asset];
+    selectedId = id;
+  }
+
+  function updateCharacterJoint(
+    id: string,
+    joint:
+      | "headRotX"
+      | "leftArmRotX"
+      | "rightArmRotX"
+      | "leftForearmRotX"
+      | "rightForearmRotX"
+      | "leftLegRotX"
+      | "rightLegRotX"
+      | "leftShinRotX"
+      | "rightShinRotX",
+    value: number,
+  ) {
+    assets = assets.map((a) =>
+      a.id === id
+        ? { ...a, [joint]: clamp2(Number.isFinite(value) ? value : 0) }
+        : a,
+    );
   }
 
   function removeAsset(id: string) {
@@ -428,12 +514,26 @@
     <div class="flex flex-col gap-2">
       <div class="flex items-center justify-between">
         <span class="text-sm font-medium text-orange-400">Ассеты</span>
-        <button
-          onclick={addAsset}
-          class="text-xs bg-orange-600 hover:bg-orange-500 text-white px-2 py-1 rounded transition-colors"
-        >
-          + Палка
-        </button>
+        <div class="flex gap-1">
+          <button
+            onclick={addAsset}
+            class="text-xs bg-orange-600 hover:bg-orange-500 text-white px-2 py-1 rounded transition-colors"
+          >
+            + Палка
+          </button>
+          <button
+            onclick={() => addCharacter("male")}
+            class="text-xs bg-blue-700 hover:bg-blue-600 text-white px-2 py-1 rounded transition-colors"
+          >
+            + Мужчина
+          </button>
+          <button
+            onclick={() => addCharacter("female")}
+            class="text-xs bg-pink-700 hover:bg-pink-600 text-white px-2 py-1 rounded transition-colors"
+          >
+            + Женщина
+          </button>
+        </div>
       </div>
 
       {#if assets.length === 0}
@@ -566,6 +666,31 @@
             </label>
           </div>
         </div>
+
+        {#if selectedAsset.type === "character"}
+          <div class="flex flex-col gap-1">
+            <span class="text-xs text-gray-400">Суставы (градусы)</span>
+            <div class="grid grid-cols-2 gap-2">
+              {#each jointControls as joint}
+                <label class="flex flex-col gap-0.5">
+                  <span class="text-xs text-gray-500">{joint[1]}</span>
+                  <input
+                    type="number"
+                    step="1"
+                    value={selectedAsset[joint[0] as keyof Asset] ?? 0}
+                    oninput={(e) =>
+                      updateCharacterJoint(
+                        selectedAsset.id,
+                        joint[0] as Parameters<typeof updateCharacterJoint>[1],
+                        +e.currentTarget.value,
+                      )}
+                    class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-orange-500 outline-none"
+                  />
+                </label>
+              {/each}
+            </div>
+          </div>
+        {/if}
 
         <div class="flex flex-col gap-1">
           <span class="text-xs text-gray-400">Размеры</span>

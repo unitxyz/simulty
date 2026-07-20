@@ -3,9 +3,11 @@
   import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   import { onMount, onDestroy } from "svelte";
 
+  type CharacterGender = "male" | "female";
+
   interface AssetData {
     id: string;
-    type: "box";
+    type: "box" | "character";
     name: string;
     x: number;
     y: number;
@@ -16,6 +18,16 @@
     rotX: number;
     rotY: number;
     rotZ: number;
+    gender?: CharacterGender;
+    headRotX?: number;
+    leftArmRotX?: number;
+    rightArmRotX?: number;
+    leftForearmRotX?: number;
+    rightForearmRotX?: number;
+    leftLegRotX?: number;
+    rightLegRotX?: number;
+    leftShinRotX?: number;
+    rightShinRotX?: number;
   }
 
   let {
@@ -193,6 +205,7 @@
   let gizmoStartPos = new THREE.Vector3();
   let gizmoDragId: string | null = null;
   let gizmoStartAngle = 0;
+  let dragMoved = false; // tracks if drag changed position (to skip state sync if not)
 
   // Interaction state
   let raycaster = new THREE.Raycaster();
@@ -435,21 +448,165 @@
     }
   }
 
+  function createCharacter(a: AssetData): THREE.Group {
+    const group = new THREE.Group();
+    const isFemale = a.gender === "female";
+    const body = new THREE.MeshStandardMaterial({
+      color: isFemale ? 0xff70b7 : 0x54a9ff,
+      roughness: 0.8,
+    });
+
+    const makeBox = (
+      width: number,
+      height: number,
+      depth: number,
+      material: THREE.Material,
+    ) => new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+
+    const torsoWidth = isFemale ? 0.34 : 0.42;
+    const torsoHeight = isFemale ? 0.58 : 0.62;
+    const limbWidth = 0.12;
+    const limbDepth = 0.12;
+    const upperArmLength = 0.34;
+    const forearmLength = 0.32;
+    const thighLength = 0.48;
+    const shinLength = 0.46;
+    const hipY = thighLength + shinLength;
+    const shoulderY = hipY + 0.12 + torsoHeight - 0.18;
+    const headY = hipY + 0.12 + torsoHeight + 0.15;
+
+    const torso = makeBox(torsoWidth, torsoHeight, isFemale ? 0.2 : 0.24, body);
+    torso.position.y = hipY + 0.12 + torsoHeight / 2;
+    torso.userData.assetId = a.id;
+    group.add(torso);
+
+    const pelvis = makeBox(torsoWidth * 0.9, 0.24, 0.22, body);
+    pelvis.position.y = hipY;
+    pelvis.userData.assetId = a.id;
+    group.add(pelvis);
+
+    const head = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(isFemale ? 0.145 : 0.16, 0),
+      body,
+    );
+    head.position.y = headY;
+    head.rotation.x = THREE.MathUtils.degToRad(a.headRotX ?? 0);
+    head.userData.assetId = a.id;
+    group.add(head);
+
+    const createArm = (
+      side: number,
+      upperRotation: number,
+      forearmRotation: number,
+    ) => {
+      const shoulder = new THREE.Group();
+      shoulder.position.set(
+        side * (torsoWidth / 2 + limbWidth / 2),
+        shoulderY,
+        0,
+      );
+      shoulder.rotation.x = THREE.MathUtils.degToRad(upperRotation);
+
+      const upper = makeBox(limbWidth, upperArmLength, limbDepth, body);
+      upper.position.y = -upperArmLength / 2;
+      upper.userData.assetId = a.id;
+      shoulder.add(upper);
+
+      const elbow = new THREE.Group();
+      elbow.position.y = -upperArmLength;
+      elbow.rotation.x = THREE.MathUtils.degToRad(forearmRotation);
+      const forearm = makeBox(
+        limbWidth * 0.95,
+        forearmLength,
+        limbDepth * 0.95,
+        body,
+      );
+      forearm.position.y = -forearmLength / 2;
+      forearm.userData.assetId = a.id;
+      elbow.add(forearm);
+      shoulder.add(elbow);
+      group.add(shoulder);
+    };
+
+    createArm(-1, a.leftArmRotX ?? 0, a.leftForearmRotX ?? 0);
+    createArm(1, a.rightArmRotX ?? 0, a.rightForearmRotX ?? 0);
+
+    const createLeg = (
+      side: number,
+      thighRotation: number,
+      shinRotation: number,
+    ) => {
+      const hip = new THREE.Group();
+      hip.position.set(side * (torsoWidth * 0.25), hipY, 0);
+      hip.rotation.x = THREE.MathUtils.degToRad(thighRotation);
+
+      const thigh = makeBox(
+        limbWidth * 1.15,
+        thighLength,
+        limbDepth * 1.1,
+        body,
+      );
+      thigh.position.y = -thighLength / 2;
+      thigh.userData.assetId = a.id;
+      hip.add(thigh);
+
+      const knee = new THREE.Group();
+      knee.position.y = -thighLength;
+      knee.rotation.x = THREE.MathUtils.degToRad(shinRotation);
+      const shin = makeBox(limbWidth, shinLength, limbDepth, body);
+      shin.position.y = -shinLength / 2;
+      shin.userData.assetId = a.id;
+      knee.add(shin);
+      hip.add(knee);
+      group.add(hip);
+    };
+
+    createLeg(-1, a.leftLegRotX ?? 0, a.leftShinRotX ?? 0);
+    createLeg(1, a.rightLegRotX ?? 0, a.rightShinRotX ?? 0);
+
+    group.userData.assetId = a.id;
+    group.userData.assetType = "character";
+    group.position.set(a.x, a.y + 0.02, a.z);
+    group.rotation.set(
+      THREE.MathUtils.degToRad(a.rotX),
+      THREE.MathUtils.degToRad(a.rotY),
+      THREE.MathUtils.degToRad(a.rotZ),
+    );
+    return group;
+  }
+
   function buildAssets() {
     if (!assetGroup) {
       assetGroup = new THREE.Group();
       scene.add(assetGroup);
     }
 
-    // Remove old meshes
-    for (const [id, mesh] of assetMeshes) {
-      assetGroup.remove(mesh);
-      mesh.geometry.dispose();
+    // Remove old asset objects and all character parts
+    for (const child of [...assetGroup.children]) {
+      assetGroup.remove(child);
+      child.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        const material = mesh.material as THREE.Material | THREE.Material[];
+        if (Array.isArray(material)) {
+          material.forEach((item) => item.dispose());
+        } else if (material) {
+          material.dispose();
+        }
+      });
     }
     assetMeshes.clear();
+    selectionRing = undefined as any;
+    gizmoGroup = undefined as any;
+    gizmoArrows = [];
 
-    // Create new meshes (boxes)
     for (const a of assets) {
+      if (a.type === "character") {
+        const character = createCharacter(a);
+        assetGroup.add(character);
+        continue;
+      }
+
       const w = Math.max(0.01, a.width);
       const h = Math.max(0.01, a.height);
       const d = Math.max(0.01, a.depth);
@@ -593,6 +750,65 @@
     assetGroup.add(gizmoGroup);
   }
 
+  function getAssetObject(id: string): THREE.Object3D | null {
+    for (const child of assetGroup.children) {
+      if (child.userData && child.userData.assetId === id) {
+        return child;
+      }
+      let found: THREE.Object3D | null = null;
+      child.traverse((obj) => {
+        if (!found && obj.userData && obj.userData.assetId === id) {
+          found = obj;
+        }
+      });
+      if (found) return child; // return the top-level group/mesh
+    }
+    return null;
+  }
+
+  function updateAssetObjectPos(id: string, x: number, y: number, z: number) {
+    const obj = getAssetObject(id);
+    if (obj) {
+      if (obj.userData && obj.userData.assetType === "character") {
+        obj.position.set(x, y + 0.02, z);
+      } else {
+        obj.position.set(x, y, z);
+      }
+    }
+    if (selectionRing) selectionRing.position.set(x, y, z);
+    if (gizmoGroup) gizmoGroup.position.set(x, y, z);
+  }
+
+  function updateAssetObjectRot(
+    id: string,
+    rx: number,
+    ry: number,
+    rz: number,
+  ) {
+    const obj = getAssetObject(id);
+    if (obj) {
+      obj.rotation.set(
+        THREE.MathUtils.degToRad(rx),
+        THREE.MathUtils.degToRad(ry),
+        THREE.MathUtils.degToRad(rz),
+      );
+    }
+    if (selectionRing) {
+      selectionRing.rotation.set(
+        THREE.MathUtils.degToRad(rx),
+        THREE.MathUtils.degToRad(ry),
+        THREE.MathUtils.degToRad(rz),
+      );
+    }
+    if (gizmoGroup) {
+      gizmoGroup.rotation.set(
+        THREE.MathUtils.degToRad(rx),
+        THREE.MathUtils.degToRad(ry),
+        THREE.MathUtils.degToRad(rz),
+      );
+    }
+  }
+
   function getPointerCoords(e: MouseEvent) {
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -601,9 +817,17 @@
 
   function pickAsset(): THREE.Mesh | null {
     raycaster.setFromCamera(pointer, camera);
-    const meshes = Array.from(assetMeshes.values());
-    const hits = raycaster.intersectObjects(meshes, false);
-    return hits.length > 0 ? (hits[0].object as THREE.Mesh) : null;
+    const hits = raycaster.intersectObjects(assetGroup.children, true);
+    if (hits.length > 0) {
+      let obj: THREE.Object3D | null = hits[0].object;
+      while (obj) {
+        if (obj.userData && obj.userData.assetId) {
+          return obj as THREE.Mesh;
+        }
+        obj = obj.parent;
+      }
+    }
+    return null;
   }
 
   function pickGizmo(): "x" | "y" | "z" | null {
@@ -752,23 +976,31 @@
             let deltaDeg = (deltaRad * 180) / Math.PI;
             if (a) {
               if (gizmoAxis === "x") {
-                onRotate(gizmoDragId, a.rotX + deltaDeg, a.rotY, a.rotZ);
+                a.rotX += deltaDeg;
+                updateAssetObjectRot(gizmoDragId, a.rotX, a.rotY, a.rotZ);
               } else if (gizmoAxis === "y") {
-                onRotate(gizmoDragId, a.rotX, a.rotY + deltaDeg, a.rotZ);
+                a.rotY += deltaDeg;
+                updateAssetObjectRot(gizmoDragId, a.rotX, a.rotY, a.rotZ);
               } else if (gizmoAxis === "z") {
-                onRotate(gizmoDragId, a.rotX, a.rotY, a.rotZ + deltaDeg);
+                a.rotZ += deltaDeg;
+                updateAssetObjectRot(gizmoDragId, a.rotX, a.rotY, a.rotZ);
               }
             }
             gizmoStartAngle = currentAngle;
+            dragMoved = true;
           } else {
             const newCoord = intersect.add(dragOffset);
             if (gizmoAxis === "x") {
-              onMove(gizmoDragId, newCoord.x, a.y, a.z);
+              a.x = newCoord.x;
+              updateAssetObjectPos(gizmoDragId, a.x, a.y, a.z);
             } else if (gizmoAxis === "y") {
-              onMove(gizmoDragId, a.x, newCoord.y, a.z);
+              a.y = newCoord.y;
+              updateAssetObjectPos(gizmoDragId, a.x, a.y, a.z);
             } else if (gizmoAxis === "z") {
-              onMove(gizmoDragId, a.x, a.y, newCoord.z);
+              a.z = newCoord.z;
+              updateAssetObjectPos(gizmoDragId, a.x, a.y, a.z);
             }
+            dragMoved = true;
           }
         }
       }
@@ -792,7 +1024,10 @@
       const newZ = intersect.z + dragOffset.z;
       const a = assets.find((a) => a.id === dragId);
       if (a) {
-        onMove(dragId, newX, a.y, newZ);
+        a.x = newX;
+        a.z = newZ;
+        updateAssetObjectPos(dragId, a.x, a.y, a.z);
+        dragMoved = true;
       }
     }
   }
@@ -804,16 +1039,34 @@
     }
 
     if (gizmoAxis) {
+      if (dragMoved && gizmoDragId) {
+        const a = assets.find((a) => a.id === gizmoDragId);
+        if (a) {
+          if (rotateMode) {
+            onRotate(gizmoDragId, a.rotX, a.rotY, a.rotZ);
+          } else {
+            onMove(gizmoDragId, a.x, a.y, a.z);
+          }
+        }
+      }
       gizmoAxis = null;
       gizmoDragId = null;
       isDragging = false;
+      dragMoved = false;
       controls.enabled = true;
       return;
     }
 
     if (dragId) {
+      if (dragMoved) {
+        const a = assets.find((a) => a.id === dragId);
+        if (a) {
+          onMove(dragId, a.x, a.y, a.z);
+        }
+      }
       dragId = null;
       isDragging = false;
+      dragMoved = false;
       controls.enabled = true;
       return;
     }
