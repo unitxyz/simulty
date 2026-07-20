@@ -13,13 +13,16 @@
     width: number;
     height: number;
     depth: number;
+    rotX: number;
+    rotY: number;
+    rotZ: number;
   }
 
   let {
-    spaceWidth = 20,
-    spaceLength = 20,
-    fieldWidth = 10,
-    fieldLength = 10,
+    spaceWidth = 10,
+    spaceLength = 10,
+    fieldWidth = 8,
+    fieldLength = 8,
     gridWidth = 1,
     gridLength = 1,
     gridOpacity = 0.5,
@@ -30,10 +33,12 @@
     gridLayerY = 0,
     gridLayerZ = 0,
     cameraFree = false,
+    rotateMode = false,
     assets = [] as AssetData[],
     selectedId = null as string | null,
     onSelect = (_id: string | null) => {},
     onMove = (_id: string, _x: number, _y: number, _z: number) => {},
+    onRotate = (_id: string, _rx: number, _ry: number, _rz: number) => {},
   }: {
     spaceWidth?: number;
     spaceLength?: number;
@@ -49,10 +54,12 @@
     gridLayerY?: number;
     gridLayerZ?: number;
     cameraFree?: boolean;
+    rotateMode?: boolean;
     assets?: AssetData[];
     selectedId?: string | null;
     onSelect?: (id: string | null) => void;
     onMove?: (id: string, x: number, y: number, z: number) => void;
+    onRotate?: (id: string, rx: number, ry: number, rz: number) => void;
   } = $props();
 
   let container: HTMLDivElement;
@@ -185,6 +192,7 @@
   let gizmoAxis: "x" | "y" | "z" | null = null;
   let gizmoStartPos = new THREE.Vector3();
   let gizmoDragId: string | null = null;
+  let gizmoStartAngle = 0;
 
   // Interaction state
   let raycaster = new THREE.Raycaster();
@@ -454,6 +462,11 @@
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(a.x, a.y, a.z);
+      mesh.rotation.set(
+        (a.rotX * Math.PI) / 180,
+        (a.rotY * Math.PI) / 180,
+        (a.rotZ * Math.PI) / 180,
+      );
       mesh.userData.assetId = a.id;
       assetGroup.add(mesh);
       assetMeshes.set(a.id, mesh);
@@ -478,6 +491,11 @@
           new THREE.LineBasicMaterial({ color: 0xff8800, linewidth: 2 }),
         );
         selectionRing.position.set(a.x, a.y, a.z);
+        selectionRing.rotation.set(
+          (a.rotX * Math.PI) / 180,
+          (a.rotY * Math.PI) / 180,
+          (a.rotZ * Math.PI) / 180,
+        );
         assetGroup.add(selectionRing);
         boxGeo.dispose();
       }
@@ -501,73 +519,77 @@
 
     gizmoGroup = new THREE.Group();
 
-    const arrowLen = 0.18;
-    const shaftSize = 0.008;
-    const headSize = 0.025;
-    const headLen = 0.045;
+    {
+      // Axis arrows are used for both move and rotate modes
+      const arrowLen = 0.18;
+      const shaftSize = 0.008;
+      const headSize = 0.025;
+      const headLen = 0.045;
 
-    const axes: {
-      dir: THREE.Vector3;
-      color: number;
-      name: "x" | "y" | "z";
-      offset: number;
-    }[] = [
-      {
-        dir: new THREE.Vector3(1, 0, 0),
-        color: 0xff3333,
-        name: "x",
-        offset: a.width / 2,
-      },
-      {
-        dir: new THREE.Vector3(0, 1, 0),
-        color: 0x33ff33,
-        name: "y",
-        offset: a.height / 2,
-      },
-      {
-        dir: new THREE.Vector3(0, 0, 1),
-        color: 0x3333ff,
-        name: "z",
-        offset: a.depth / 2,
-      },
-    ];
+      const axes: {
+        dir: THREE.Vector3;
+        color: number;
+        name: "x" | "y" | "z";
+        offset: number;
+      }[] = [
+        {
+          dir: new THREE.Vector3(1, 0, 0),
+          color: 0xff3333,
+          name: "x",
+          offset: a.width / 2,
+        },
+        {
+          dir: new THREE.Vector3(0, 1, 0),
+          color: 0x33ff33,
+          name: "y",
+          offset: a.height / 2,
+        },
+        {
+          dir: new THREE.Vector3(0, 0, 1),
+          color: 0x3333ff,
+          name: "z",
+          offset: a.depth / 2,
+        },
+      ];
 
-    for (const axis of axes) {
-      // Arrow shaft (thin box)
-      const shaftGeo = new THREE.BoxGeometry(shaftSize, arrowLen, shaftSize);
-      const shaftMat = new THREE.MeshBasicMaterial({ color: axis.color });
-      const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+      for (const axis of axes) {
+        const shaftGeo = new THREE.BoxGeometry(shaftSize, arrowLen, shaftSize);
+        const shaftMat = new THREE.MeshBasicMaterial({ color: axis.color });
+        const shaft = new THREE.Mesh(shaftGeo, shaftMat);
 
-      // Arrow head (small box)
-      const headGeo = new THREE.BoxGeometry(headSize, headLen, headSize);
-      const headMat = new THREE.MeshBasicMaterial({ color: axis.color });
-      const head = new THREE.Mesh(headGeo, headMat);
+        const headGeo = new THREE.BoxGeometry(headSize, headLen, headSize);
+        const headMat = new THREE.MeshBasicMaterial({ color: axis.color });
+        const head = new THREE.Mesh(headGeo, headMat);
 
-      // Group for this axis
-      const arrowGroup = new THREE.Group();
-      shaft.position.y = arrowLen / 2;
-      head.position.y = arrowLen + headLen / 2;
-      arrowGroup.add(shaft);
-      arrowGroup.add(head);
+        const arrowGroup = new THREE.Group();
+        shaft.position.y = arrowLen / 2;
+        head.position.y = arrowLen + headLen / 2;
+        arrowGroup.add(shaft);
+        arrowGroup.add(head);
 
-      // Orient along axis direction and offset to object surface
-      if (axis.name === "x") {
-        arrowGroup.rotation.z = -Math.PI / 2;
-        arrowGroup.position.x = axis.offset;
-      } else if (axis.name === "z") {
-        arrowGroup.rotation.x = Math.PI / 2;
-        arrowGroup.position.z = axis.offset;
-      } else {
-        arrowGroup.position.y = axis.offset;
+        if (axis.name === "x") {
+          arrowGroup.rotation.z = -Math.PI / 2;
+          arrowGroup.position.x = axis.offset;
+        } else if (axis.name === "z") {
+          arrowGroup.rotation.x = Math.PI / 2;
+          arrowGroup.position.z = axis.offset;
+        } else {
+          arrowGroup.position.y = axis.offset;
+        }
+
+        arrowGroup.userData.axis = axis.name;
+        arrowGroup.userData.isGizmo = true;
+        gizmoGroup.add(arrowGroup);
+        gizmoArrows.push(shaft, head);
       }
-
-      arrowGroup.userData.axis = axis.name;
-      arrowGroup.userData.isGizmo = true;
-      gizmoGroup.add(arrowGroup);
-      gizmoArrows.push(shaft, head);
     }
 
     gizmoGroup.position.set(a.x, a.y, a.z);
+    gizmoGroup.rotation.set(
+      (a.rotX * Math.PI) / 180,
+      (a.rotY * Math.PI) / 180,
+      (a.rotZ * Math.PI) / 180,
+    );
     assetGroup.add(gizmoGroup);
   }
 
@@ -622,36 +644,64 @@
       const a = assets.find((a) => a.id === selectedId);
       if (a) {
         gizmoStartPos.set(a.x, a.y, a.z);
-        // Build a plane that contains the axis and faces the camera
-        const axisVec = new THREE.Vector3(
-          axis === "x" ? 1 : 0,
-          axis === "y" ? 1 : 0,
-          axis === "z" ? 1 : 0,
-        );
-        const camDir = new THREE.Vector3();
-        camera.getWorldDirection(camDir);
-        // Plane normal = cross(axis, cross(camDir, axis)) — faces camera, contains axis
-        const temp = new THREE.Vector3().crossVectors(camDir, axisVec);
-        const planeNormal = new THREE.Vector3()
-          .crossVectors(axisVec, temp)
-          .normalize();
-        dragPlane.setFromNormalAndCoplanarPoint(planeNormal, gizmoStartPos);
-        raycaster.setFromCamera(pointer, camera);
-        const intersect = new THREE.Vector3();
-        raycaster.ray.intersectPlane(dragPlane, intersect);
-        dragOffset.copy(gizmoStartPos).sub(intersect);
+
+        if (rotateMode) {
+          // For rotate: compute initial angle between pointer and axis center
+          raycaster.setFromCamera(pointer, camera);
+          // Plane perpendicular to the rotation axis, through object center
+          const axisVec = new THREE.Vector3(
+            axis === "x" ? 1 : 0,
+            axis === "y" ? 1 : 0,
+            axis === "z" ? 1 : 0,
+          );
+          dragPlane.setFromNormalAndCoplanarPoint(axisVec, gizmoStartPos);
+          const intersect = new THREE.Vector3();
+          if (raycaster.ray.intersectPlane(dragPlane, intersect)) {
+            const local = intersect.clone().sub(gizmoStartPos);
+            // Angle in the plane perpendicular to axis
+            if (axis === "x") {
+              gizmoStartAngle = Math.atan2(local.z, local.y);
+            } else if (axis === "y") {
+              gizmoStartAngle = Math.atan2(local.x, local.z);
+            } else {
+              gizmoStartAngle = Math.atan2(local.y, local.x);
+            }
+          }
+        } else {
+          // For move: build drag plane as before
+          const axisVec = new THREE.Vector3(
+            axis === "x" ? 1 : 0,
+            axis === "y" ? 1 : 0,
+            axis === "z" ? 1 : 0,
+          );
+          const camDir = new THREE.Vector3();
+          camera.getWorldDirection(camDir);
+          const temp = new THREE.Vector3().crossVectors(camDir, axisVec);
+          const planeNormal = new THREE.Vector3()
+            .crossVectors(axisVec, temp)
+            .normalize();
+          dragPlane.setFromNormalAndCoplanarPoint(planeNormal, gizmoStartPos);
+          raycaster.setFromCamera(pointer, camera);
+          const intersect = new THREE.Vector3();
+          raycaster.ray.intersectPlane(dragPlane, intersect);
+          dragOffset.copy(gizmoStartPos).sub(intersect);
+        }
       }
       controls.enabled = false;
       return;
     }
 
-    // Check asset
+    // Check asset (skip body drag in rotate mode)
     const hit = pickAsset();
     if (hit) {
       e.stopPropagation();
       e.preventDefault();
       const id = hit.userData.assetId as string;
       onSelect(id);
+      if (rotateMode) {
+        // In rotate mode, clicking body just selects — no drag
+        return;
+      }
       dragId = id;
       isDragging = false;
 
@@ -686,15 +736,39 @@
       raycaster.setFromCamera(pointer, camera);
       const intersect = new THREE.Vector3();
       if (raycaster.ray.intersectPlane(dragPlane, intersect)) {
-        const newCoord = intersect.add(dragOffset);
         const a = assets.find((a) => a.id === gizmoDragId);
         if (a) {
-          if (gizmoAxis === "x") {
-            onMove(gizmoDragId, newCoord.x, a.y, a.z);
-          } else if (gizmoAxis === "y") {
-            onMove(gizmoDragId, a.x, newCoord.y, a.z);
-          } else if (gizmoAxis === "z") {
-            onMove(gizmoDragId, a.x, a.y, newCoord.z);
+          if (rotateMode) {
+            const local = intersect.clone().sub(gizmoStartPos);
+            let currentAngle: number;
+            if (gizmoAxis === "x") {
+              currentAngle = Math.atan2(local.z, local.y);
+            } else if (gizmoAxis === "y") {
+              currentAngle = Math.atan2(local.x, local.z);
+            } else {
+              currentAngle = Math.atan2(local.y, local.x);
+            }
+            let deltaRad = currentAngle - gizmoStartAngle;
+            let deltaDeg = (deltaRad * 180) / Math.PI;
+            if (a) {
+              if (gizmoAxis === "x") {
+                onRotate(gizmoDragId, a.rotX + deltaDeg, a.rotY, a.rotZ);
+              } else if (gizmoAxis === "y") {
+                onRotate(gizmoDragId, a.rotX, a.rotY + deltaDeg, a.rotZ);
+              } else if (gizmoAxis === "z") {
+                onRotate(gizmoDragId, a.rotX, a.rotY, a.rotZ + deltaDeg);
+              }
+            }
+            gizmoStartAngle = currentAngle;
+          } else {
+            const newCoord = intersect.add(dragOffset);
+            if (gizmoAxis === "x") {
+              onMove(gizmoDragId, newCoord.x, a.y, a.z);
+            } else if (gizmoAxis === "y") {
+              onMove(gizmoDragId, a.x, newCoord.y, a.z);
+            } else if (gizmoAxis === "z") {
+              onMove(gizmoDragId, a.x, a.y, newCoord.z);
+            }
           }
         }
       }
@@ -817,6 +891,9 @@
   });
 
   $effect(() => {
+    assets;
+    selectedId;
+    rotateMode;
     if (scene) {
       buildAssets();
     }

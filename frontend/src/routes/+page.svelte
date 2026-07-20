@@ -9,6 +9,9 @@
     width: number;
     height: number;
     depth: number;
+    rotX: number;
+    rotY: number;
+    rotZ: number;
   }
 </script>
 
@@ -34,6 +37,10 @@
   let gridLayerY = $state(0);
   let gridLayerZ = $state(0);
 
+  type AnchorMode = "minus" | "center" | "plus";
+  let resizeAnchor = $state<AnchorMode>("center");
+  let rotateMode = $state(false);
+
   let cameraFree = $state(false);
 
   let assets = $state<Asset[]>([]);
@@ -49,11 +56,14 @@
       type: "box",
       name: `Палка ${assetCounter}`,
       x: 0,
-      y: 0.5,
+      y: 1,
       z: 0,
       width: 0.1,
       height: 1,
       depth: 0.1,
+      rotX: 0,
+      rotY: 0,
+      rotZ: 0,
     };
     assets = [...assets, asset];
     selectedId = id;
@@ -74,6 +84,46 @@
       a.x = clamp2(x);
       a.y = clamp2(y);
       a.z = clamp2(z);
+    }
+  }
+
+  function updateAssetRot(
+    id: string,
+    rotX: number,
+    rotY: number,
+    rotZ: number,
+  ) {
+    assets = assets.map((a) =>
+      a.id === id
+        ? {
+            ...a,
+            rotX: clamp2(Number.isFinite(rotX) ? rotX : 0),
+            rotY: clamp2(Number.isFinite(rotY) ? rotY : 0),
+            rotZ: clamp2(Number.isFinite(rotZ) ? rotZ : 0),
+          }
+        : a,
+    );
+  }
+
+  function resizeAsset(
+    id: string,
+    axis: "width" | "height" | "depth",
+    newSize: number,
+  ) {
+    const a = assets.find((a) => a.id === id);
+    if (!a) return;
+    const oldSize = a[axis];
+    const delta = newSize - oldSize;
+    a[axis] = clamp2(newSize);
+    if (axis === "width") {
+      if (resizeAnchor === "minus") a.x = clamp2(a.x - delta / 2);
+      else if (resizeAnchor === "plus") a.x = clamp2(a.x + delta / 2);
+    } else if (axis === "height") {
+      if (resizeAnchor === "minus") a.y = clamp2(a.y - delta / 2);
+      else if (resizeAnchor === "plus") a.y = clamp2(a.y + delta / 2);
+    } else if (axis === "depth") {
+      if (resizeAnchor === "minus") a.z = clamp2(a.z - delta / 2);
+      else if (resizeAnchor === "plus") a.z = clamp2(a.z + delta / 2);
     }
   }
 
@@ -278,6 +328,48 @@
         />
         <span class="text-xs text-gray-400">3D сетка (кубы)</span>
       </label>
+      <div class="flex items-center gap-2 mt-1">
+        <span class="text-xs text-gray-500">изменение размера:</span>
+        <div class="flex gap-2">
+          <label class="flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              value="minus"
+              bind:group={resizeAnchor}
+              class="accent-orange-500"
+            />
+            <span class="text-xs text-gray-400">минус</span>
+          </label>
+          <label class="flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              value="center"
+              bind:group={resizeAnchor}
+              class="accent-orange-500"
+            />
+            <span class="text-xs text-gray-400">центр</span>
+          </label>
+          <label class="flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              value="plus"
+              bind:group={resizeAnchor}
+              class="accent-orange-500"
+            />
+            <span class="text-xs text-gray-400">плюс</span>
+          </label>
+        </div>
+      </div>
+      <label class="flex items-center gap-2 mt-1">
+        <input
+          type="checkbox"
+          bind:checked={rotateMode}
+          class="accent-orange-500"
+        />
+        <span class="text-xs text-gray-400"
+          >режим вращения (вместо перемещения)</span
+        >
+      </label>
       {#if grid3D}
         <div class="flex flex-col gap-1 mt-1 pl-2 border-l border-gray-700">
           <span class="text-xs text-gray-500"
@@ -354,7 +446,15 @@
               a.id
                 ? 'bg-orange-900/60 border border-orange-600'
                 : 'bg-gray-800 hover:bg-gray-750 border border-transparent'}"
+              role="button"
+              tabindex="0"
               onclick={() => selectAsset(a.id)}
+              onkeydown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  selectAsset(a.id);
+                }
+              }}
             >
               <span class="text-sm text-gray-200 flex-1 truncate">{a.name}</span
               >
@@ -414,6 +514,60 @@
         </div>
 
         <div class="flex flex-col gap-1">
+          <span class="text-xs text-gray-400">Вращение (градусы)</span>
+          <div class="flex gap-2">
+            <label class="flex flex-col gap-0.5 flex-1">
+              <span class="text-xs text-gray-500">X</span>
+              <input
+                type="number"
+                step="1"
+                value={selectedAsset.rotX}
+                oninput={(e) =>
+                  updateAssetRot(
+                    selectedAsset.id,
+                    +e.currentTarget.value,
+                    selectedAsset.rotY,
+                    selectedAsset.rotZ,
+                  )}
+                class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-orange-500 outline-none"
+              />
+            </label>
+            <label class="flex flex-col gap-0.5 flex-1">
+              <span class="text-xs text-gray-500">Y</span>
+              <input
+                type="number"
+                step="1"
+                value={selectedAsset.rotY}
+                oninput={(e) =>
+                  updateAssetRot(
+                    selectedAsset.id,
+                    selectedAsset.rotX,
+                    +e.currentTarget.value,
+                    selectedAsset.rotZ,
+                  )}
+                class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-orange-500 outline-none"
+              />
+            </label>
+            <label class="flex flex-col gap-0.5 flex-1">
+              <span class="text-xs text-gray-500">Z</span>
+              <input
+                type="number"
+                step="1"
+                value={selectedAsset.rotZ}
+                oninput={(e) =>
+                  updateAssetRot(
+                    selectedAsset.id,
+                    selectedAsset.rotX,
+                    selectedAsset.rotY,
+                    +e.currentTarget.value,
+                  )}
+                class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-orange-500 outline-none"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
           <span class="text-xs text-gray-400">Размеры</span>
           <div class="flex gap-2">
             <label class="flex flex-col gap-0.5 flex-1">
@@ -422,7 +576,13 @@
                 type="number"
                 step="0.01"
                 min="0.01"
-                bind:value={selectedAsset.width}
+                value={selectedAsset.width}
+                oninput={(e) =>
+                  resizeAsset(
+                    selectedAsset.id,
+                    "width",
+                    +e.currentTarget.value,
+                  )}
                 class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-orange-500 outline-none"
               />
             </label>
@@ -432,7 +592,13 @@
                 type="number"
                 step="0.01"
                 min="0.01"
-                bind:value={selectedAsset.height}
+                value={selectedAsset.height}
+                oninput={(e) =>
+                  resizeAsset(
+                    selectedAsset.id,
+                    "height",
+                    +e.currentTarget.value,
+                  )}
                 class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-orange-500 outline-none"
               />
             </label>
@@ -442,7 +608,13 @@
                 type="number"
                 step="0.01"
                 min="0.01"
-                bind:value={selectedAsset.depth}
+                value={selectedAsset.depth}
+                oninput={(e) =>
+                  resizeAsset(
+                    selectedAsset.id,
+                    "depth",
+                    +e.currentTarget.value,
+                  )}
                 class="w-full bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700 focus:border-orange-500 outline-none"
               />
             </label>
@@ -469,10 +641,12 @@
       {gridLayerY}
       {gridLayerZ}
       {cameraFree}
+      {rotateMode}
       {assets}
       {selectedId}
       onSelect={selectAsset}
       onMove={updateAssetPos}
+      onRotate={updateAssetRot}
     />
   </div>
 </div>
